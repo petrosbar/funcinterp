@@ -1,1 +1,1 @@
-# A collection of functional programming language interpreters.
+# A Collection of Functional Programming Language Interpreters.

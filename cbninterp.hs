@@ -11,8 +11,8 @@ module CBNMonadicInterp where
 import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Monad.Reader
-import qualified Data.Map as Map
 import Data.Maybe
+import qualified Data.Map as Map
 
 type Name = String
  
@@ -26,7 +26,7 @@ data OprName = Add | Subtr | Mult
              deriving Show
 
             
--- Expression representation
+-- Expression representation.
 data Expr = IntExpr Integer
           | Var Name 
           | BinOp OprName (Expr, Expr)
@@ -38,9 +38,9 @@ data Expr = IntExpr Integer
           deriving Show
 
 
--- Branch type consisting of a pattern and an associated 
--- expression which is evaluated in case pattern matches.          
-data Branch = Branch Pattern Expr 
+-- A branch consists of a pattern and an associated 
+-- expression which is evaluated in case pattern matches.
+data Branch = Branch Pattern Expr
             deriving Show
 
 
@@ -62,7 +62,7 @@ binOp opr (IntExpr x) (IntExpr y) =
         Mult  -> x * y
 
 
--- Insert a list of pairs (bindings) into an existing env.
+-- Insert a list of pairs (bindings) into an existing environment.
 updateEnv :: Env -> [(String, Expr)] -> Env
 updateEnv env [] = env
 updateEnv env (x:xs) = updateEnv (Map.insert (fst x) (snd x) env) xs
@@ -107,16 +107,16 @@ selectBranch v [] = error "Unmatched"
 -------------------- Eval function ---------------------------
 --------------------------------------------------------------
 eval :: Expr -> Eval Expr
--- Integer expression
+-- Integer expression.
 eval (IntExpr n) = return $ IntExpr n
--- Variables now hold expressions, not just values. 
+-- Variables hold expressions, not just values. 
 -- Thus, always evaluate the content of a variable.
 eval (Var n) = do
     env <- ask
     case Map.lookup n env of
         Nothing -> throwError $ "Unbound Variable" ++ n
         Just val -> eval val
--- Binary operators
+-- Binary operator.
 eval (BinOp operator (x, y)) = do
     e1 <- eval x
     e2 <- eval y
@@ -126,18 +126,21 @@ eval (BinOp operator (x, y)) = do
         _ -> throwError "Invalid operands in binop"
 -- Constructors. Do not change anything. 
 eval (Constr cname exlist) = return $ Constr cname exlist
--- Abstractions. Return a thunk.
+-- Abstraction. Return a thunk along with its environment.
 eval (Abs n e) = do
     env <- ask
     return $ Thunk env n e
--- Function application.
+-- Function application. First, evaluate the left-hand side of the application.
+-- If its result is a thunk, then bind the right-hand side expression of the application to the formal parameter, 
+-- store it into the environment and evaluate its body. 
+-- If, along the way, the argument is needed, then (and only then) retrieve it from the environment.
 eval (App e1 e2) = do 
-    val1 <- eval e1
-    case val1 of
+    val <- eval e1
+    case val of
         Thunk env' n fbody -> 
             local (const (Map.insert n e2 env')) (eval fbody)
         _ -> throwError "Invalid function application"
--- Case expressions.
+-- Case expression.
 eval (Case expr brlist) = do
     evexpr' <- eval expr
     selectBranch evexpr' brlist
