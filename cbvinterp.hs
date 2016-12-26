@@ -10,8 +10,8 @@ type VarName = String
 type FunName = String
 type ConName = String
 
--- Data structure for the environment.
--- It contains pairs of String/Value's. 
+-- The environment data structure. 
+-- Maps strings to values, i.e., variables or abstractions. 
 type Env = Map.Map String Value
 
 
@@ -29,17 +29,21 @@ data Expr = IntExpr Integer
           | Case Expr [Branch]
           deriving (Show)
 
-            
+
+-- A branch consists of a pattern and an associated 
+-- expression which is evaluated in case pattern matches.
 data Branch = Branch Pattern Expr 
             deriving (Show)
 
               
+-- A pattern is an expression that is an integer literal (constant), a variable, or a constructor. 
 data Pattern = Varp VarName
              | IntValp Integer
              | Constrp ConName [Pattern]
              deriving Show
 
-                
+
+
 -- A Value is either a function, or a data constructor with all its 
 -- arguments evaluated, or an integer value.
 data Value = Def FunName [VarName] Expr -- TODO: Should the expression within the function's body be also evaluated?
@@ -64,7 +68,7 @@ updateEnv env [] = env
 updateEnv env (x:xs) = updateEnv (Map.insert (fst x) (snd x) env) xs
 
 
--- Take a list of variables and store their IDs in a list 
+-- Store the IDs of a list of variables in a list. 
 extractFromList :: [Pattern] -> [String]
 extractFromList (Varp x:exs) = x : extractFromList exs
 extractFromList [] = []
