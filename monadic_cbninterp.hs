@@ -62,7 +62,7 @@ binOp opr (IntExpr x) (IntExpr y) =
         Mult  -> x * y
 
 
--- Insert a list of pairs (bindings) into an existing environment.
+-- Insert a list of variable/expression pairs (bindings) into an existing environment.
 updateEnv :: Env -> [(String, Expr)] -> Env
 updateEnv env [] = env
 updateEnv env (x:xs) = updateEnv (Map.insert (fst x) (snd x) env) xs
@@ -89,7 +89,7 @@ selectBranch c1@(Constr cname clist) (br:brs) = do
             | otherwise       -> 
                 selectBranch c1 brs
         Branch p@(Varp vname) expr -> 
-            local (const (updateEnv env [(vname, c1)])) (eval expr)
+            local (const $ updateEnv env [(vname, c1)]) (eval expr)
 selectBranch c1@(IntExpr n) (br:brs) = do
     env <- ask
     case br of
@@ -124,7 +124,7 @@ eval (BinOp operator (x, y)) = do
         (IntExpr i, IntExpr j) ->         
             return $ IntExpr (binOp operator e1 e2)
         _ -> throwError "Invalid operands in binop"
--- Constructors. Do not change anything. 
+-- Constructors. Already in weak head normal form so no need to evaluate anything. 
 eval (Constr cname exlist) = return $ Constr cname exlist
 -- Abstraction. Return a thunk along with its environment.
 eval (Abs n e) = do
@@ -138,9 +138,10 @@ eval (App e1 e2) = do
     val <- eval e1
     case val of
         Thunk env' n fbody -> 
-            local (const (Map.insert n e2 env')) (eval fbody)
+            local (const $ Map.insert n e2 env') (eval fbody)
         _ -> throwError "Invalid function application"
--- Case expression.
+-- Case expression. Evaluate the case argument expression according to the above rules
+-- and call selectBranch.
 eval (Case expr brlist) = do
     evexpr' <- eval expr
     selectBranch evexpr' brlist
