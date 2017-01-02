@@ -7,13 +7,13 @@ type pattern = IntExprp of int
              | Constrp of name * (pattern list)
 
 type expr = IntExpr of int
-    | Var of (name)
-    | BinOp of (operator * (expr * expr))
-    | Constructor  of (name * (expr list))
-    | Abs of (name * expr)
-    | App of (expr * expr)
-    | Case of (expr * (branch list))
-    | Thunk of (env * name * expr)
+          | Var of (name)
+          | BinOp of (operator * (expr * expr))
+          | Constructor  of (name * (expr list))
+          | Abs of (name * expr)
+          | App of (expr * expr)
+          | Case of (expr * (branch list))
+          | Thunk of (env * name * expr)
 
 and  branch = Branch of (pattern * expr)
 
@@ -44,9 +44,10 @@ let rec eval env = function
     | BinOp (operator, (op1, op2)) -> 
         let x = eval env op1 in
         let y = eval env op2 in
-            (match (x, y) with 
+            begin match (x, y) with 
                 (IntExpr o1, IntExpr o2) -> IntExpr (binOp operator o1 o2)
-                | _ -> failwith "das")
+                | _ -> failwith "das"
+            end
     | _ -> failwith "Unmatched" 
 
 and binOp oprtr op1 op2 =
@@ -101,7 +102,7 @@ let test4 =
         (App  (Abs ("x", BinOp (Add, (Var "x", IntExpr 2))), IntExpr 10));;
 
 (*
- * (λx.x x) (λx.x x) (Omega)
+ * (λx.x x) (λx.x x) [Omega]
  *
  *let test5 = 
  *  eval []
