@@ -23,21 +23,26 @@ type value = IntVal of int
 and env = Env of ((name * value) list)
 
 
-(* TODO: Use List.combine *)
-let rec zip xs ys = match xs, ys with
-    | [], _ -> []
-    | _, [] -> []
-    | (x :: xs), (y :: ys) -> (x, y) :: zip xs ys
-
 let rec extractFromList xs = match xs with
     | (Varp x::xs) -> x :: extractFromList xs
     | _ -> []
 
+(* 
+ * Take an environment and a list of expressions and store each one 
+ * in its own thunk.
+ *)
+(* val listOfThunks : env -> expr list -> value list *)
+let rec listOfThunks env exprlist = match exprlist with
+    | (x::xs) -> Thunk ((Env env), "dummy", x) :: listOfThunks env xs
+    | []      -> []
 
+(*
+ * Evaluation function.
+ *)
 (* val eval : env -> expr -> value *)
 let rec eval env = function
     | IntExpr n -> IntVal n
-    | Var x -> List.assoc x env
+    | Var x -> evalThunk env (List.assoc x env)
     | Abs (n, ex) -> Thunk ((Env env), n, ex)
     | App (ex1, ex2) -> 
         begin match eval env ex1 with
@@ -60,11 +65,17 @@ let rec eval env = function
             end
     | _ -> failwith "Unmatched" 
 
+and evalThunk env value = match value with
+    | IntVal n -> IntVal n
+    | Thunk ((Env env'), n, exp) -> eval env' exp
+    | _ -> failwith "Invalid value"
+
 (* val binOp : operator -> int -> int -> int *)
 and binOp oprtr op1 op2 = match oprtr with
     | Add   -> op1 + op2
     | Subtr -> op1 - op2
     | Mult  -> op1 * op2
+
 
 (* val matchPattern : env -> expr -> branch list -> value *)
 and matchPattern env exp blist = match blist with
@@ -74,8 +85,12 @@ and matchPattern env exp blist = match blist with
                 begin match br with
                     | Branch (IntExprp n, _) -> matchPattern env constr brlist
                     | Branch (Constrp (cname, clist), cexpr) ->
-	                    if cname = name then 
-                            let varlist = List.combine (extractFromList clist) (evalListExpr env explist) in
+	                    if cname = name then
+                            (* 
+                             * Associate variables contained in the pattern of the matched branch
+                             * with the unevaluated expressions which are turned into thunks.
+                             *)
+                            let varlist = List.combine (extractFromList clist) (listOfThunks env explist) in
 		                    let env1 = List.append env varlist in
                             eval env1 cexpr
                         else 
@@ -97,14 +112,6 @@ and matchPattern env exp blist = match blist with
             | v -> matchPattern env v brlist
         end
     | [] -> failwith "Unmatched"
-
-(* 
- * XXX: This should not be here. Add an interface file and put function
- * signatures in it.
- *)
-and evalListExpr env exprlist = match exprlist with
-    | (x::xs) -> eval env x :: evalListExpr env xs
-    | []      -> []
 
 
 let test1 = 
