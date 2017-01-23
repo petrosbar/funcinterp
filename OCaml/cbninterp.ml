@@ -1,3 +1,7 @@
+(*
+ * An abstract machine, i.e., a call-by-name interpreter of the defined language.
+ *)
+
 type name = string
 
 type operator = Add | Subtr | Mult
@@ -18,11 +22,12 @@ and  branch = Branch of (pattern * expr)
 
 type value = IntVal of int
            | Thunk of (env * name * expr)
-           | ConstrVal of (name * (expr list))
+           | ConstrVal of (name * (value list))
 
 and env = Env of ((name * value) list)
 
 
+(* val : extractFromList : pattern list -> string *)
 let rec extractFromList xs = match xs with
     | (Varp x::xs) -> x :: extractFromList xs
     | _ -> []
@@ -53,7 +58,9 @@ let rec eval env = function
                 in eval ((n, thunk) :: en) ex
             | _ -> failwith "Invalid function application"
         end 
-    | Constructor (cname, explist) -> ConstrVal (cname, explist)
+    | Constructor (cname, explist) -> 
+        let vallist = listEval env explist in
+            ConstrVal (cname, vallist)
     | Case (ex, (brlist)) -> let evex = eval env ex in
                              matchPattern env evex brlist
     | BinOp (operator, (op1, op2)) -> 
@@ -63,12 +70,20 @@ let rec eval env = function
                 (IntVal o1, IntVal o2) -> IntVal (binOp operator o1 o2)
                 | _ -> failwith "Invalid binary operands"
             end
-    | _ -> failwith "Unmatched" 
 
-and evalThunk env value = match value with
-    | IntVal n -> IntVal n
-    | Thunk ((Env env'), n, exp) -> eval env' exp
-    | _ -> failwith "Invalid value"
+(* val : listEval -> env -> expr list -> value list *)
+and listEval env exprlist =
+    match exprlist with
+        | (x::xs) -> eval env x :: listEval env xs
+        | []      -> []
+
+(* val evalThunk : env -> value -> value *)
+and evalThunk env value = 
+    match value with
+        | IntVal n -> IntVal n
+        | Thunk ((Env env'), n, exp) -> eval env' exp
+        | ConstrVal (cname, exprlist) as constr -> constr
+        
 
 (* val binOp : operator -> int -> int -> int *)
 and binOp oprtr op1 op2 = match oprtr with
