@@ -1,29 +1,43 @@
 (*
- * An abstract machine, i.e., a call-by-name interpreter of the defined language.
+ * An abstract machine, i.e., a call-by-name interpreter for the defined language.
  *)
 
 type name = string
 
 type operator = Add | Subtr | Mult
 
+(*
+ * This is the pattern of a case expression, i.e., the part
+ * of the branch which case's argument is matched against.
+ *)
 type pattern = IntExprp of int
              | Varp of name
              | Constrp of name * (pattern list)
 
-type expr = IntExpr of int
-          | Var of (name)
-          | BinOp of (operator * (expr * expr))
-          | Constructor  of (name * (expr list))
-          | Abs of (name * expr)
-          | App of (expr * expr)
-          | Case of (expr * (branch list))
+(*
+ * Language's terms (expressions).
+ *)
+type expr = IntExpr of int                        (* Integer expression *)
+          | Var of (name)                         (* Variable *)
+          | BinOp of (operator * (expr * expr))   (* Binary operation *)
+          | Constructor  of (name * (expr list))  (* Constructor, e.g., (cons (x nil)) *)
+          | Abs of (name * expr)                  (* Lambda abstraction *)
+          | App of (expr * expr)                  (* Function application *)
+          | Case of (expr * (branch list))        (* Case expression *)
+
 
 and  branch = Branch of (pattern * expr)
 
+(*
+ * A value is an integer, or constructor, or a thunk.
+ *)
 type value = IntVal of int
            | Thunk of (env * name * expr)
            | ConstrVal of (name * (value list))
 
+(*
+ * The environment where variables and thunks are stored.
+ *)
 and env = Env of ((name * value) list)
 
 
@@ -58,10 +72,11 @@ let rec eval env = function
                 in eval ((n, thunk) :: en) ex
             | _ -> failwith "Invalid function application"
         end 
-    | Constructor (cname, explist) -> 
+    | Constructor (cname, explist) ->
+        (* Return the constructor with its arguments evaluated. XXX do we really need to fully evaluate it?*)
         let vallist = listEval env explist in
             ConstrVal (cname, vallist)
-    | Case (ex, (brlist)) -> let evex = eval env ex in
+    | Case (ex, (brlist)) -> let evex = eval env ex in (* XXX ex should not be fully evaluated. *)
                              matchPattern env evex brlist
     | BinOp (operator, (op1, op2)) -> 
         let x = eval env op1 in
