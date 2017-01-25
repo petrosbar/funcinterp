@@ -17,13 +17,13 @@ type pattern = IntExprp of int
 (*
  * Language's terms (expressions).
  *)
-type expr = IntExpr of int                        (* Integer expression *)
-          | Var of (name)                         (* Variable *)
-          | BinOp of (operator * (expr * expr))   (* Binary operation *)
-          | Constructor  of (name * (expr list))  (* Constructor, e.g., (cons (x nil)) *)
-          | Abs of (name * expr)                  (* Lambda abstraction *)
-          | App of (expr * expr)                  (* Function application *)
-          | Case of (expr * (branch list))        (* Case expression *)
+type expr = IntExpr of int                          (* Integer expression *)
+          | Var of (name)                           (* Variable *)
+          | BinOp of (operator * (expr * expr))     (* Binary operation *)
+          | Constructor  of (name * (expr list))    (* Constructor, e.g., (cons (x nil)) *)
+          | Abs of (name * expr)                    (* Lambda abstraction *)
+          | App of (expr * expr)                    (* Function application *)
+          | Case of (expr * (branch list))          (* Case expression *)
 
 
 and  branch = Branch of (pattern * expr)
@@ -36,7 +36,7 @@ type value = IntVal of int
            | ConstrVal of (name * (value list))
 
 (*
- * The environment where variables and thunks are stored.
+ * The environment, where variables and thunks are stored.
  *)
 and env = Env of ((name * value) list)
 
@@ -76,7 +76,7 @@ let rec eval env = function
         (* Return the constructor with its arguments evaluated. XXX do we really need to fully evaluate it?*)
         let vallist = listEval env explist in
             ConstrVal (cname, vallist)
-    | Case (ex, (brlist)) -> let evex = eval env ex in (* XXX ex should not be fully evaluated. *)
+    | Case (ex, (brlist)) -> let evex = eval env ex in (* XXX ex should not be fully evaluated. WHNF*)
                              matchPattern env evex brlist
     | BinOp (operator, (op1, op2)) -> 
         let x = eval env op1 in
