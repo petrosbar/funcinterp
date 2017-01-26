@@ -153,7 +153,7 @@ and matchPattern env casexp blist = match blist with
                              * with the unevaluated expressions which are turned into thunks.
                              *)
                             let varlist = List.combine (extractFromList clist) tlist in
-		                    let env1 = List.append env varlist in
+                            let env1 = List.append env varlist in
                             eval env1 cexpr
                         else 
                             matchPattern env casexp brlist
