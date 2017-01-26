@@ -29,14 +29,14 @@ type expr = IntExpr of int                          (* Integer expression *)
 and  branch = Branch of (pattern * expr)
 
 (*
- * A value is an integer, or constructor, or a thunk.
+ * A value is an integer, a constructor, or a thunk.
  *)
 type value = IntVal of int
            | Thunk of (env * name * expr)
            | ConstrVal of (name * (value list))
 
 (*
- * The environment, where variables and thunks are stored.
+ * The environment, where values are stored.
  *)
 and env = Env of ((name * value) list)
 
@@ -52,8 +52,9 @@ let rec extractFromList xs = match xs with
  *)
 (* val listOfThunks : env -> expr list -> value list *)
 let rec listOfThunks env exprlist = match exprlist with
-    | (x::xs) -> Thunk ((Env env), "dummy", x) :: listOfThunks env xs
+    | (x::xs) -> Thunk ((Env env), "_", x) :: listOfThunks env xs
     | []      -> []
+
 
 (*
  * Evaluation function.
@@ -61,23 +62,39 @@ let rec listOfThunks env exprlist = match exprlist with
 (* val eval : env -> expr -> value *)
 let rec eval env = function
     | IntExpr n -> IntVal n
-    | Var x -> evalThunk env (List.assoc x env)
+    (* 
+     * A variable holds either an integer value or a thunk (i.e., a λ_.e).
+     * In the first case, return the value whereas in the second one
+     * return the evaluated expression of the thunk.
+     *)
+    | Var x -> 
+        begin match List.assoc x env with
+            | IntVal n -> IntVal n
+            | Thunk (Env env, undrst, expr) -> eval env expr
+        end
     | Abs (n, ex) -> Thunk ((Env env), n, ex)
-    | App (ex1, ex2) -> 
+    | App (ex1, ex2) ->
         begin match eval env ex1 with
             | Thunk (Env en, n, ex) ->
-                (* Insert ex2 as a (unevaluated) thunk into the environment... *)
-                let thunk = Thunk ((Env env), n, ex2)
-                (* ... and evaluate ex2. *)
+                let thunk = Thunk ((Env env), "_", ex2)
+                (* Insert ex2 as a (unevaluated) thunk into the environment and evaluate ex1. *)
                 in eval ((n, thunk) :: en) ex
             | _ -> failwith "Invalid function application"
         end 
     | Constructor (cname, explist) ->
-        (* Return the constructor with its arguments evaluated. XXX do we really need to fully evaluate it?*)
+        (* Return the constructor with its arguments evaluated. *)
         let vallist = listEval env explist in
             ConstrVal (cname, vallist)
-    | Case (ex, (brlist)) -> let evex = eval env ex in (* XXX ex should not be fully evaluated. WHNF*)
-                             matchPattern env evex brlist
+    | Case (ex, (brlist)) ->
+        begin match ex with
+            | Constructor (cname, explist) -> 
+                let thunklist = listOfThunks env explist in
+                let ex' = ConstrVal (cname, thunklist) in
+                matchPattern env ex' brlist
+            | _ -> 
+                let evex = eval env ex in
+                matchPattern env evex brlist
+        end
     | BinOp (operator, (op1, op2)) -> 
         let x = eval env op1 in
         let y = eval env op2 in
@@ -86,19 +103,13 @@ let rec eval env = function
                 | _ -> failwith "Invalid binary operands"
             end
 
+
 (* val : listEval -> env -> expr list -> value list *)
 and listEval env exprlist =
     match exprlist with
         | (x::xs) -> eval env x :: listEval env xs
         | []      -> []
 
-(* val evalThunk : env -> value -> value *)
-and evalThunk env value = 
-    match value with
-        | IntVal n -> IntVal n
-        | Thunk ((Env env'), n, exp) -> eval env' exp
-        | ConstrVal (cname, exprlist) as constr -> constr
-        
 
 (* val binOp : operator -> int -> int -> int *)
 and binOp oprtr op1 op2 = match oprtr with
@@ -107,48 +118,52 @@ and binOp oprtr op1 op2 = match oprtr with
     | Mult  -> op1 * op2
 
 
-(* val matchPattern : env -> expr -> branch list -> value *)
-and matchPattern env exp blist = match blist with
+(* val matchPattern : env -> value -> branch list -> value *)
+and matchPattern env casexp blist = match blist with
     | br::brlist -> 
-        begin match exp with
-            | ConstrVal (name, explist) as constr->
+        begin match casexp with
+            | ConstrVal (name, tlist) ->
                 begin match br with
-                    | Branch (IntExprp n, _) -> matchPattern env constr brlist
+                    | Branch (IntExprp n, _) -> matchPattern env casexp brlist  (* This should not be allowed by the type checker. *)
                     | Branch (Constrp (cname, clist), cexpr) ->
 	                    if cname = name then
                             (* 
                              * Associate variables contained in the pattern of the matched branch
                              * with the unevaluated expressions which are turned into thunks.
                              *)
-                            let varlist = List.combine (extractFromList clist) (listOfThunks env explist) in
+                            let varlist = List.combine (extractFromList clist) tlist in
 		                    let env1 = List.append env varlist in
                             eval env1 cexpr
                         else 
-                            matchPattern env constr brlist
-                    | Branch (Varp vname, vexpr) -> eval ((vname, constr) :: env) vexpr      
+                            matchPattern env casexp brlist
+                    | Branch (Varp vname, vexpr) -> 
+                        eval ((vname, casexp) :: env) vexpr      
                 end
-            | IntVal n as intexpr ->
+            | IntVal n ->
                 begin match br with
                     | Branch (IntExprp p, expr) -> 
                         if n = p then
                             eval env expr
                         else 
-                            matchPattern env intexpr brlist
+                            matchPattern env casexp brlist
                     | Branch (Varp p, expr) ->
-                        let env1 = (p, intexpr) :: env in
+                        let env1 = (p, casexp) :: env in
                         eval env1 expr
-                    | Branch (Constrp (_, _), _) -> matchPattern env intexpr brlist
+                    | Branch (Constrp (_, _), _) -> matchPattern env casexp brlist
                 end
             | v -> matchPattern env v brlist
         end
     | [] -> failwith "Unmatched"
 
 
+(* 4 + 2 *)
 let test1 = 
     eval [] (BinOp (Add, (IntExpr 4, IntExpr 2)));;
 
+(* λx.1 + 2 *)
 let test2 = 
     eval [] (Abs ("x", (BinOp (Add, (IntExpr 1, IntExpr 2)))));;
+
 
 let test3 = 
     eval [("x", IntVal 2)] (Abs ("x", (BinOp (Add, (Var "x", IntExpr 2)))));;
@@ -156,6 +171,7 @@ let test3 =
 let test4 = 
     eval [("y", IntVal 2)] 
         (App  (Abs ("x", BinOp (Add, (Var "x", IntExpr 2))), IntExpr 10));;
+
 
 (*
  * (λx.x x) (λx.x x) [Omega]
@@ -179,12 +195,21 @@ let test7 =
             Branch (IntExprp 5, BinOp (Add, (IntExpr 1, IntExpr 1)))])
         );;
 
+(* 
+ * case List omega of
+ *   List y -> 2
+ *   5      -> 1 + 1
+ *)
 let test8 = 
     eval []
-        (Case (Constructor ("List", [((App (Abs ("x", App (Var "x", Var "x")), Abs ("x", App (Var "x", Var "x")))))]), [
+        (Case (Constructor 
+                ("List", [((App ( 
+                    Abs ("x", App (Var "x", Var "x")), 
+                    Abs ("x", App (Var "x", Var "x")))))]), [
             Branch (Constrp ("List", [Varp "y"]), (IntExpr 2));
             Branch (IntExprp 5, BinOp (Add, (IntExpr 1, IntExpr 1)))])
         );;
+
 
 let test9 = 
     eval []
@@ -192,3 +217,4 @@ let test9 =
             Branch (Constrp ("List", [Varp "y"]), (Var "y"));
             Branch (IntExprp 5, BinOp (Add, (IntExpr 1, IntExpr 1)))])
         );;
+
