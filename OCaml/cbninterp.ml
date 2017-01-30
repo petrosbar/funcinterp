@@ -157,7 +157,8 @@ and matchPattern env casexp blist = match blist with
                             eval env1 cexpr
                         else 
                             matchPattern env casexp brlist
-                    | Branch (Varp vname, vexpr) -> 
+                    | Branch (Varp vname, vexpr) ->
+                        (* A variable always succeeds, i.e., it is an irrefutable pattern. *)
                         eval ((vname, casexp) :: env) vexpr      
                 end
             | IntVal n ->
@@ -168,6 +169,7 @@ and matchPattern env casexp blist = match blist with
                         else 
                             matchPattern env casexp brlist
                     | Branch (Varp p, expr) ->
+                        (* A variable always succeeds, i.e., it is an irrefutable pattern. *)
                         let env1 = (p, casexp) :: env in
                         eval env1 expr
                     | Branch (Constrp (_, _), _) -> matchPattern env casexp brlist
