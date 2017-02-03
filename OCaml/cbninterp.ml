@@ -41,7 +41,7 @@ type value = IntVal of int
 and env = Env of ((name * value) list)
 
 
-(* val : extractFromList : pattern list -> string *)
+(* val : extractFromList : pattern list -> string list *)
 let rec extractFromList xs = match xs with
     | (Varp x::xs) -> x :: extractFromList xs
     | _ -> []
@@ -69,9 +69,13 @@ let rec eval env = function
      *)
     | Var x -> 
         begin match List.assoc x env with
-            | IntVal n -> IntVal n
-            | Thunk (Env env, str, expr) -> eval env expr
+            (* 
+             * If x is either an integer or a constructor, just return it. Otherwise, 
+             * if it's a thunk, evaluate its body.
+             *)
+            | IntVal n as intv -> intv
             | ConstrVal (name, explist) as const -> const
+            | Thunk (Env env, str, expr) -> eval env expr
         end
     (* The evaluation of an abstraction is a thunk. *)
     | Abs (n, ex) -> Thunk ((Env env), n, ex)
@@ -96,21 +100,7 @@ let rec eval env = function
         in ConstrVal (cname, vallist)
     (* Case expression evaluation. *)
     | Case (ex, (brlist)) ->
-        (*
-         * The argument of a case expression must be brought into Weak Head Normal Form 
-         * before calling matchPattern. Thus, if it is a constructor turn its enclosed list
-         * of arguments/expressions into a list of thunks but do not evaluate any of them,
-         * and call matchPattern on it. Anything else follows the usual reduction rules.
-         *)
-        begin match ex with
-            | Constructor (cname, explist) -> 
-                let thunklist = listOfThunks env explist in
-                let ex' = ConstrVal (cname, thunklist) in
-                matchPattern env ex' brlist
-            | _ -> 
-                let evex = eval env ex in
-                matchPattern env evex brlist
-        end
+        matchPattern env ex brlist
     (* Binary operation evaluation. *)
     | BinOp (operator, (op1, op2)) -> 
         let x = eval env op1 in
@@ -139,47 +129,64 @@ and binOp oprtr op1 op2 = match oprtr with
  * matchPattern evaluates the expression part of the branch whose pattern matches the case argument.
  *
  *) 
-(* val matchPattern : env -> value -> branch list -> value *)
+(* val matchPattern : env -> expr -> branch list -> value *)
 and matchPattern env casexp blist = match blist with
-    | br::brlist -> 
-        begin match casexp with
-            | ConstrVal (name, tlist) ->
-                begin match br with
-                    | Branch (IntExprp n, _) -> matchPattern env casexp brlist  (* This should not be allowed by the type checker. *)
-                    | Branch (Constrp (cname, clist), cexpr) ->
-	                    if cname = name then
-                            (* 
-                             * Associate variables contained in the pattern of the matched branch
-                             * with the unevaluated expressions which are turned into thunks.
-                             *)
-                            let varlist = List.combine (extractFromList clist) tlist in
-                            let env1 = List.append env varlist in
-                            eval env1 cexpr
-                        else 
+    | br::brlist ->
+        begin match br with
+            (* Case analysis on the patterns. *)
+            | Branch (IntExprp n, pexp) ->
+                (* If pattern is an integer value then we're forced to evaluate case's argument eagerly. *)
+                let evex = eval env casexp in
+                begin match evex with
+                    | IntVal m -> 
+                        if n = m then
+                            (* If match succeeded, evaluate the associated expression. *)
+                            eval env pexp
+                        else
+                            (* Otherwise, move to the next branch. *)
                             matchPattern env casexp brlist
-                    | Branch (Varp vname, vexpr) ->
-                        (* A variable always succeeds, i.e., it is an irrefutable pattern. *)
-                        eval ((vname, casexp) :: env) vexpr      
+                    (* Likewise, if the evaluated expression isn't an integer, then move to the next branch. *)
+                    | _ -> matchPattern env casexp brlist
                 end
-            | IntVal n ->
-                begin match br with
-                    | Branch (IntExprp p, expr) -> 
-                        if n = p then
-                            eval env expr
-                        else 
+            (* Pattern is constructor. *)
+            | Branch (Constrp (pname, plist), cexpr) ->
+                begin match casexp with
+                    (* 
+                     * If case's argument is a constructor and its name equals that of the pattern,
+                     * insert its arguments in a list of thunks, append the list to env 
+                     * and evaluate the associated expression.
+                     *)
+                    | Constructor (cname, clist) ->
+                        if pname = cname then
+                            let thunklist = listOfThunks env clist in
+                            let env' = List.combine (extractFromList plist) thunklist in
+                            eval (List.append env env') cexpr
+                        else
                             matchPattern env casexp brlist
-                    | Branch (Varp p, expr) ->
-                        (* A variable always succeeds, i.e., it is an irrefutable pattern. *)
-                        let env1 = (p, casexp) :: env in
-                        eval env1 expr
-                    | Branch (Constrp (_, _), _) -> matchPattern env casexp brlist
+                    (*
+                     * If it's an application, then make its argument a thunk
+                     * and call matchPattern again with the body of the abstraction.
+                     * This way, we bring the first argument to weak head normal form.
+                     *)
+                    | App (ex1, ex2) -> 
+                        begin match  ex1 with
+                            | Abs (str, expr1) -> 
+                                let expr2 = (str, Thunk (Env [], "_", ex2)) in
+                                matchPattern (expr2::env) expr1 blist
+                            | _ -> failwith "Invalid case expression"
+                        end
+                    | _ -> matchPattern env casexp brlist
                 end
-            | v -> matchPattern env v brlist
+            (* Pattern is variable. Matching is irrefutable. *)
+            | Branch (Varp x, vexp) ->
+                let thunk = Thunk ((Env env), "_", casexp) in 
+                let env' = (x, thunk) :: env in
+                    eval env' vexp
         end
     | [] -> failwith "Unmatched"
 
 
-(* Test Case (TODO: They should be in a separate file) *)
+(* Test Cases (TODO: They should be in a separate file) *)
 
 (* 4 + 2 *)
 let test1 = 
@@ -232,18 +239,18 @@ let test7 =
         );;
 
 (* 
- * case List omega of
- *   List y -> 2
- *   5      -> 1 + 1
+ * case Cons1 omega of
+ *   Cons1 y -> 2
+ *   Cons2 y -> 1 + 2
  *)
 let test8 = 
     eval []
         (Case (Constructor 
-                ("List", [((App ( 
+                ("Cons1", [((App ( 
                     Abs ("x", App (Var "x", Var "x")), 
                     Abs ("x", App (Var "x", Var "x")))))]), [
-            Branch (Constrp ("List", [Varp "y"]), (IntExpr 2));
-            Branch (IntExprp 5, BinOp (Add, (IntExpr 1, IntExpr 1)))])
+            Branch (Constrp ("Cons1", [Varp "y"]), (IntExpr 2));
+            Branch (Constrp ("Cons2", [Varp "y"]), BinOp (Add, (IntExpr 1, IntExpr 2)))])
         );;
 
 (* 
@@ -264,3 +271,22 @@ let test9 =
             Branch (IntExprp 5, BinOp (Add, (IntExpr 1, IntExpr 1)))])
         );;
 *)
+
+let test10 = 
+    eval []
+        (Case (App (Abs ("x", (Constructor ("Cons1", [Var "x"]))), (IntExpr 51)), [
+            Branch (Constrp ("Cons1", [Varp "y"]), (IntExpr 100))])
+        );;
+            
+
+(* 
+ * case (λx.Cons1[x]) Ω of
+ *   Cons1[y] -> y
+ *)
+let test11 = 
+    eval []
+        (Case (App (Abs ("x", (Constructor ("Cons1", [Var "x"]))), (App 
+                (Abs ("x", App (Var "x", Var "x")), 
+                 Abs ("x", App (Var "x", Var "x"))))), [
+            Branch (Constrp ("Cons1", [Varp "y"]), (IntExpr 1))])
+        );;
