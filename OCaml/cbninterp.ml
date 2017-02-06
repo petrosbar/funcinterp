@@ -148,7 +148,7 @@ and matchPattern env casexp blist = match blist with
                     (* Likewise, if the evaluated expression isn't an integer, then move to the next branch. *)
                     | _ -> matchPattern env casexp brlist
                 end
-            (* Pattern is constructor. *)
+            (* Pattern is a constructor. *)
             | Branch (Constrp (pname, plist), cexpr) ->
                 begin match casexp with
                     (* 
@@ -164,9 +164,10 @@ and matchPattern env casexp blist = match blist with
                         else
                             matchPattern env casexp brlist
                     (*
-                     * If it's an application, then make its argument a thunk
-                     * and call matchPattern again with the body of the abstraction.
-                     * This way, we bring the first argument to weak head normal form.
+                     * If it's an application, then make the operator part a thunk
+                     * and call matchPattern again, but this time its argument is the body of 
+                     * the operand (if it's an abstraction) itself.
+                     * This way, we bring the first argument into weak head normal form.
                      *)
                     | App (ex1, ex2) -> 
                         begin match  ex1 with
@@ -177,7 +178,7 @@ and matchPattern env casexp blist = match blist with
                         end
                     | _ -> matchPattern env casexp brlist
                 end
-            (* Pattern is variable. Matching is irrefutable. *)
+            (* Pattern is a variable, thus, matching is irrefutable. *)
             | Branch (Varp x, vexp) ->
                 let thunk = Thunk ((Env env), "_", casexp) in 
                 let env' = (x, thunk) :: env in
