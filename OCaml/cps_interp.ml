@@ -1,5 +1,5 @@
 (*
- * Our call-by-name interpreter transformed into CPS. 
+ * An attempt to transform our call-by-name interpreter into CPS. 
  * For completeness, we wrote our own versions of List.append and List.combine so that they too follow
  * the style of the rest of the program.
  *
@@ -40,7 +40,6 @@ type value = IntVal of int
            | Thunk of (env * name * expr)
            | ConstrVal of (name * (value list))
 
-
 (*
  * The environment, where values are stored.
  *)
@@ -54,17 +53,32 @@ and env = Env of ((name * value) list)
 let id x = x
 
 
-(* val : extractFromList : pattern list -> string list *)
+(* val extractFromList : pattern list -> (name list -> name list) -> name list *)
 let rec extractFromList xlist k = match xlist with
     | (Varp x::xs) -> extractFromList xs (fun a -> x :: a)
     | _            -> k []
 
 
+(* val listOfThunks : env -> expr list -> (value list -> value list) -> value list *)
 let rec listOfThunks env exprlist k = match exprlist with
     | (x::xs) -> listOfThunks env xs (fun a -> (Thunk ((Env env), "_", x)) :: a) 
     | []      -> k []
 
 
+(* val combine : 'a list -> 'b list -> (('a * 'b) list -> ('a * 'b) list) -> ('a * 'b) list *)
+let rec combine x y k = match (x, y) with
+    | (x::xs, y::ys) -> combine xs ys (fun a -> (x, y) :: a)
+    | ([], [])       -> k []
+    | (_, _)         -> k (failwith "Length of lists not equal")
+
+
+(* val append : 'a list list -> 'a list list -> ('a list -> 'a list list) -> 'a list list *)
+let rec append l1 l2 k = match l1 with
+    | (x::xs) -> append xs l2 (fun a -> k (x :: a))
+    | []      -> k l2
+
+
+(* val eval : env -> expr -> (value -> value) -> value *)
 let rec eval env expr k =
   begin match expr with
     | IntExpr n -> k (IntVal n)
@@ -93,12 +107,14 @@ let rec eval env expr k =
   end
 
 
+(* val listEval : env -> expr list -> (value list -> value list) -> value list *)
 and listEval env exprlist k =
     match exprlist with
         | []      -> k []
         | (x::xs) -> listEval env xs (fun a -> eval env x id :: a)
 
 
+(* val binOp : operator -> value -> value -> (value -> value) -> value *)
 and binOp oprtr op1 op2 k = 
     begin match (op1, op2) with
         | (IntVal n, IntVal m) ->
@@ -109,44 +125,30 @@ and binOp oprtr op1 op2 k =
             end
     end
 
+
+(* val matchPattern : env -> expr -> branch list -> (value -> value) -> value *)
 and matchPattern env casexp blist k = match blist with
     | br::brlist ->
         begin match br with
             | Branch (IntExprp n, pexp) ->
-                (* If pattern is an integer value then we're forced to evaluate case's argument eagerly. *)
                 let evex = eval env casexp k in
                 begin match evex with
                     | IntVal m -> 
                         if n = m then
-                            (* If match succeeded, evaluate the associated expression. *)
                             eval env pexp k
                         else
-                            (* Otherwise, move to the next branch. *)
                             matchPattern env casexp brlist k
-                    (* Likewise, if the evaluated expression isn't an integer, then move to the next branch. *)
                     | _ -> matchPattern env casexp brlist k
                 end
-            (* Pattern is a constructor. *)
             | Branch (Constrp (pname, plist), cexpr) ->
                 begin match casexp with
-                    (* 
-                     * If case's argument is a constructor and its name equals that of the pattern,
-                     * insert its arguments in a list of thunks, append the list to env 
-                     * and evaluate the associated expression.
-                     *)
                     | Constructor (cname, clist) ->
                         if pname = cname then
                             let thunklist = listOfThunks env clist id in
-                            let env' = List.combine (extractFromList plist id) thunklist in
-                            eval (List.append env env') cexpr k
+                            let env' = combine (extractFromList plist id) thunklist id in
+                            eval (append env env' id) cexpr k
                         else
                             matchPattern env casexp brlist k
-                    (*
-                     * If it's an application, then make the operator part a thunk
-                     * and call matchPattern again, but this time its argument is the body of 
-                     * the operand (if it's an abstraction) itself.
-                     * This way, we bring the first argument into weak head normal form.
-                     *)
                     | App (ex1, ex2) -> 
                         begin match  ex1 with
                             | Abs (str, expr1) -> 
@@ -156,7 +158,6 @@ and matchPattern env casexp blist k = match blist with
                         end
                     | _ -> matchPattern env casexp brlist k
                 end
-            (* Pattern is a variable, thus, matching is irrefutable. *)
             | Branch (Varp x, vexp) ->
                 let thunk = Thunk ((Env env), "_", casexp) in 
                 let env' = (x, thunk) :: env in
@@ -164,107 +165,3 @@ and matchPattern env casexp blist k = match blist with
         end
     | [] -> k (failwith "Unmatched")
 
-
-
-(* 4 + 2 *)
-let test1 = 
-    eval [] (BinOp (Add, (IntExpr 4, IntExpr 2))) id
-
-(* λx.1 + 2 *)
-let test2 = 
-    eval [] (Abs ("x", (BinOp (Add, (IntExpr 1, IntExpr 2))))) id
-
-(* λx.x + 2 *)
-let test3 = 
-    eval [("x", IntVal 2)] (Abs ("x", (BinOp (Add, (Var "x", IntExpr 2))))) id
-
-(* (λx.x + 2) 10 *)
-let test4 = 
-    eval [("y", IntVal 2)] 
-        (App  (Abs ("x", BinOp (Add, (Var "x", IntExpr 2))), IntExpr 10)) id
-
-
-(*
- * Omega, DOES NOT HALT. (λx.x x) (λx.x x)
- *
- *let test5 = 
- *  eval []
- *       (App (Abs ("x", App (Var "x", Var "x")), Abs ("x", App (Var "x", Var "x"))));;
- *)
-
-(*
- * case (λx.x) 5 of
- *   5          -> 1 + 1
- *   List(x, y) -> x
- *)
-let test6 = 
-    eval []
-        (Case (App (Abs ("x", Var "x"), (IntExpr 5)), [
-            Branch ((IntExprp 5), (BinOp (Add, (IntExpr 1, IntExpr 1))));
-            Branch (Constrp ("List", [Varp "x"; Varp "y"]), (Var "x"))])
-        ) id
-
-(*
- * case List((λx.x) 5) of
- *   List(y)    -> y
- *   5          -> 1 + 1
- *)
-let test7 = 
-    eval []
-        (Case (Constructor ("List", [App (Abs ("x", (Var "x")), (IntExpr 5))]), [
-            Branch (Constrp ("List", [Varp "y"]), (Var "y"));
-            Branch (IntExprp 5, BinOp (Add, (IntExpr 1, IntExpr 1)))])
-        ) id
-
-(* 
- * case Cons1 omega of
- *   Cons1 y -> 2
- *   Cons2 y -> 1 + 2
- *)
-let test8 = 
-    eval []
-        (Case (Constructor 
-                ("Cons1", [((App ( 
-                    Abs ("x", App (Var "x", Var "x")), 
-                    Abs ("x", App (Var "x", Var "x")))))]), [
-            Branch (Constrp ("Cons1", [Varp "y"]), (IntExpr 2));
-            Branch (Constrp ("Cons2", [Varp "y"]), BinOp (Add, (IntExpr 1, IntExpr 2)))])
-        ) id
-
-(* 
- * DOES NOT HALT!
- *
- * case List omega of
- *   List y -> y
- *   5      -> 1 + 1
- *)
-(*
-let test9 = 
-    eval []
-        (Case 
-            (Constructor ("List", [((App 
-                (Abs ("x", App (Var "x", Var "x")), 
-                 Abs ("x", App (Var "x", Var "x")))))]), 
-           [Branch (Constrp ("List", [Varp "y"]), (Var "y"));
-            Branch (IntExprp 5, BinOp (Add, (IntExpr 1, IntExpr 1)))])
-        );;
-*)
-
-let test10 = 
-    eval []
-        (Case (App (Abs ("x", (Constructor ("Cons1", [Var "x"]))), (IntExpr 51)), [
-            Branch (Constrp ("Cons1", [Varp "y"]), (IntExpr 100))])
-        ) id
-            
-
-(* 
- * case (λx.Cons1[x]) Ω of
- *   Cons1[y] -> y
- *)
-let test11 = 
-    eval []
-        (Case (App (Abs ("x", (Constructor ("Cons1", [Var "x"]))), (App 
-                (Abs ("x", App (Var "x", Var "x")), 
-                 Abs ("x", App (Var "x", Var "x"))))), [
-            Branch (Constrp ("Cons1", [Varp "y"]), (IntExpr 1))])) id
- 
