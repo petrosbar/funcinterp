@@ -66,7 +66,7 @@ let rec listOfThunks env exprlist k = match exprlist with
 
 
 (* val combine : 'a list -> 'b list -> (('a * 'b) list -> ('a * 'b) list) -> ('a * 'b) list *)
-let rec combine x y k = match (x, y) with
+let rec combine l1 l2 k = match (l1, l2) with
     | (x::xs, y::ys) -> combine xs ys (fun a -> (x, y) :: a)
     | ([], [])       -> k []
     | (_, _)         -> k (failwith "Length of lists not equal")
