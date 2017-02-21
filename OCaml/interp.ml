@@ -299,11 +299,3 @@ let test11 =
             Branch (Constrp ("Cons1", [Varp "y"]), (IntExpr 1))])
         );;
 
-(*
-let test12 = 
-    eval ["factorial", Thunk (Env [], "x", If (Var "x",
-        BinOp (Mult, (Var "x",
-            App (Var "factorial", BinOp (Subtr, (Var "x", IntExpr 1))))),
-                IntExpr 1))]
-                (App (Var "factorial", IntExpr 4))
-*)
