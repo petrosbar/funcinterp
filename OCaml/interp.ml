@@ -21,6 +21,7 @@ type expr = IntExpr of int                          (* Integer expression *)
           | Var of (name)                           (* Variable *)
           | BinOp of (operator * (expr * expr))     (* Binary operation *)
           | Constructor  of (name * (expr list))    (* Constructor, e.g., (cons (x nil)) *)
+          | If of (expr * expr * expr)              (* Conditional *)
           | Abs of (name * expr)                    (* Lambda abstraction *)
           | App of (expr * expr)                    (* Function application *)
           | Case of (expr * (branch list))          (* Case expression *)
@@ -92,6 +93,12 @@ let rec eval env = function
                  *)
                 in eval ((n, thunk) :: en) ex
             | _ -> failwith "Invalid function application"
+        end
+    (* Conditional *)
+    | If (cond, exp1, exp2) ->
+        begin match eval env cond with
+            | IntVal 0 -> eval env exp2   (* "else" branch *)
+            | _        -> eval env exp1   (* "then" branch *)
         end
     (* Constructor evaluation. *)
     | Constructor (cname, explist) ->
@@ -199,7 +206,7 @@ let test2 =
 
 (* λx.x + 2 *)
 let test3 = 
-    eval [("x", IntVal 2)] (Abs ("x", (BinOp (Add, (Var "x", IntExpr 2)))));;
+    eval [] (Abs ("x", (BinOp (Add, (Var "x", IntExpr 2)))));;
 
 (* (λx.x + 2) 10 *)
 let test4 = 
@@ -291,3 +298,12 @@ let test11 =
                  Abs ("x", App (Var "x", Var "x"))))), [
             Branch (Constrp ("Cons1", [Varp "y"]), (IntExpr 1))])
         );;
+
+(*
+let test12 = 
+    eval ["factorial", Thunk (Env [], "x", If (Var "x",
+        BinOp (Mult, (Var "x",
+            App (Var "factorial", BinOp (Subtr, (Var "x", IntExpr 1))))),
+                IntExpr 1))]
+                (App (Var "factorial", IntExpr 4))
+*)
