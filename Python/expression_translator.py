@@ -76,7 +76,7 @@ def traverse(expression_tree: list) -> str:
     return expression + ")"
 
 
-def pull_out_not(expression):
+def pull_out_not(expression: list) -> None:
     """Pull out '~' from every subexpression to avoid redundant parentheses.
     
     This function recursively goes through all sublists (subexpressions)
