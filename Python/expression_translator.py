@@ -98,12 +98,16 @@ def parenthesise(nested_expressions: list) -> str:
 
 
 def parse_expression(node):
+
     if isinstance(node, ast.Name):
         return f'pl.col("{node.id}")'
+
     if isinstance(node, ast.Constant):
         return str(node.value)
+
     if isinstance(node, ast.Tuple):
         return f'({", ".join([parse_expression(element) for element in node.elts])})'
+
     if isinstance(node, ast.UnaryOp):
         un_expr = parse_expression(node.operand)
         if isinstance(node.op, (ast.UAdd, ast.USub)):
@@ -114,6 +118,7 @@ def parse_expression(node):
             if isinstance(un_expr, str):
                 return UNARY_OP_SYMBOL[node.op.__class__] + un_expr
         return None
+
     if isinstance(node, ast.Call):
         if isinstance(node.func, ast.Name):
             func = node.func.id
@@ -128,6 +133,7 @@ def parse_expression(node):
                 return f'{parse_expression(node.func.value)}.{PYTHON_METHODS_MAP[attr]}()'
             return None
         return f'pl.col("{node.args[0].id}").{func}()'
+
     if isinstance(node, ast.Compare):
         if len(node.ops + node.comparators) > 2:
             return None
@@ -140,6 +146,7 @@ def parse_expression(node):
             COMPARE_OP_SYMBOL.get(node.ops[0].__class__),
             parse_expression(node.comparators[0]),
         ]
+
     if isinstance(node, ast.BinOp):
         if isinstance(node.left, ast.Constant) and isinstance(node.right, ast.Constant):
             return str(
@@ -150,6 +157,7 @@ def parse_expression(node):
             BIN_OP_SYMBOL[node.op.__class__],
             parse_expression(node.right),
         ]
+
     if isinstance(node, ast.BoolOp):
         parse_operands = [parse_expression(i) for i in node.values]
         for index in range(1, len(parse_operands) * 2 - 1, 2):
