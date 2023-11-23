@@ -76,15 +76,20 @@ def traverse(expression_tree: list) -> str:
     return expression + ")"
 
 
-def pull_not(expr):
-    """Pull out '~' from every subexpression."""
-    if isinstance(expr, list):
-        for i, j in enumerate(expr):
+def pull_out_not(expression):
+    """Pull out '~' from every subexpression to avoid redundant parentheses.
+    
+    This function recursively goes through all sublists (subexpressions)
+    and if finds an expression of which the first symbol is "~", it pulls it out
+    and makes it a symbol of the outer list.
+    """
+    if isinstance(expression, list):
+        for i, j in enumerate(expression):
             if isinstance(j, list):
                 if j[0] == "~":
-                    expr.insert(i, j.pop(0))
+                    expression.insert(i, j.pop(0))
                 else:
-                    pull_not(j)
+                    pull_out_not(j)
 
 
 def parenthesise(nested_expressions: list) -> str:
