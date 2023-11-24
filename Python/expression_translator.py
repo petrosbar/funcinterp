@@ -21,7 +21,7 @@ UNARY_OP_SYMBOL: dict[Type[ast.AST], str] = {
     ast.Not: "~",
 }
 
-AST_2_PYTHON_OP: dict[Type[ast.AST], Callable[[Number, Number], Number]] = {
+AST2PYTHON_OP: dict[Type[ast.AST], Callable[[Number, Number], Number]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -66,11 +66,23 @@ PYTHON_BUILTINS: dict[str, str] = {
 }
 
 
-def traverse(expression_tree: list) -> str:
+def parenthesise(expression_tree: list) -> str:
+    """Turn a list, representing an expression, into string.
+
+    This function recursively traverses a list, and converts each
+    sublist (subexpression) into string, where each list bracket has been replaced
+    by parentheses.
+
+    Returns
+    -------
+    str
+        The expression, as a string, where each sublist has been enclosed in
+        a pair of parentheses.
+    """
     expression = "("
     for expr in expression_tree:
         if isinstance(expr, list):
-            expression += traverse(expr)
+            expression += parenthesise(expr)
         else:
             expression += str(expr)
     return expression + ")"
@@ -92,9 +104,9 @@ def pull_out_not(expression: list) -> None:
                     pull_out_not(j)
 
 
-def parenthesise(nested_expressions: list) -> str:
+def rewrite_expression(nested_expressions: list) -> str | None:
     pull_out_not(nested_expressions)
-    return traverse(nested_expressions)[1:-1]
+    return parenthesise(nested_expressions)[1:-1]
 
 
 def parse_expression(node):
@@ -150,7 +162,7 @@ def parse_expression(node):
     if isinstance(node, ast.BinOp):
         if isinstance(node.left, ast.Constant) and isinstance(node.right, ast.Constant):
             return str(
-                AST_2_PYTHON_OP[node.op.__class__](node.left.value, node.right.value)
+                AST2PYTHON_OP[node.op.__class__](node.left.value, node.right.value)
             )
         return [
             parse_expression(node.left),
